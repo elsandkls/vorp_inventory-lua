@@ -61,13 +61,13 @@ Config = {
 		},
 		Items = {
 			JobLock       = { "police", "doctor" },
-			itemWhiteList = { "Consumable_Water", "ammorevolvernormal", "ammoarrownormal", "Medical_Smelling_Salts" }, -- if you dont want an item a user could have to be deleted
-			AllItems      = false, -- if true then removes all items from player
+			itemWhiteList = { "consumable_raspberrywater", "ammorevolvernormal" }, -- if you dont want an item a user could have to be deleted
+			AllItems      = false,                                         -- if true then removes all items from player
 		},
 		Weapons = {
 			JobLock           = { "police", "doctor" },
-			WeaponWhitelisted = { "WEAPON_MELEE_KNIFE", "WEAPON_BOW", "WEAPON_REVOLVER_CATTLEMAN" }, -- if you dont want a weapon a user could have to be deleted
-			AllWeapons        = false, -- if true then removes all weapons from player
+			WeaponWhitelisted = { "WEAPON_MELEE_KNIFE", "WEAPON_BOW" }, -- if you dont want a weapon a user could have to be deleted
+			AllWeapons        = false,                          -- if true then removes all weapons from player
 		},
 		Ammo = {
 			JobLock = { "police", "doctor" },
