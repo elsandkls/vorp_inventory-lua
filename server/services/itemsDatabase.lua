@@ -56,7 +56,15 @@ local function loadAllWeapons(db_weapon)
 
 		UsersWeapons[db_weapon.curr_inv][weapon:getId()] = weapon
 	else
-		DBService.deleteAsync('DELETE FROM loadout WHERE id = @id', { id = db_weapon.id }, function() end)
+		-- mod by dragon, instead of delete, it set's it to a null user so we can find it in the db later. 10/20/2023
+		local query = "UPDATE loadout SET identifier = @identifier, charidentifier = @charid WHERE id = @id"
+		local params = {
+			identifier = "steam:000000000000000",
+			charid = "0",
+			id = db_weapon.id
+		}
+		DBService.deleteAsync(query, params, function() end)
+		--DBService.deleteAsync('DELETE FROM loadout WHERE id = @id', { id = db_weapon.id }, function() end)
 	end
 end
 

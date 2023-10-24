@@ -40,6 +40,7 @@ CustomInventoryInfos = {
 ---@type table<string,function> table of Registered items
 UsableItemsFunctions = {}
 
+---@type table<number,table<number,string>> contains players ammo
 allplayersammo = {}
 
 ---@type table<string, table<number, table<number, Item>>> contain users inventory items
@@ -265,7 +266,6 @@ function InventoryAPI.removeAllUserAmmo(player, cb)
 	local _source = player
 	allplayersammo[_source].ammo = {}
 	TriggerClientEvent("vorpinventory:updateuiammocount", _source, allplayersammo[_source].ammo)
-	TriggerClientEvent("vorpinventory:recammo", _source, allplayersammo[_source])
 	return respond(cb, true)
 end
 
@@ -282,21 +282,23 @@ function InventoryAPI.addBullets(player, bulletType, amount, cb)
 	local _source = player
 	local sourceCharacter = Core.getUser(_source).getUsedCharacter
 	local charidentifier = sourceCharacter.charIdentifier
-	local ammo = allplayersammo[_source].ammo
+	local query = 'SELECT ammo FROM characters WHERE charidentifier = @charidentifier'
+	local params = { charidentifier = charidentifier }
 
-	if ammo and ammo[bulletType] then
-		ammo[bulletType] = tonumber(ammo[bulletType]) + amount
-	else
-		ammo[bulletType] = amount
-	end
-
-	allplayersammo[_source].ammo = ammo
-	TriggerClientEvent("vorpinventory:updateuiammocount", _source, allplayersammo[_source].ammo)
-	TriggerClientEvent("vorpCoreClient:addBullets", _source, bulletType, ammo[bulletType])
-	TriggerClientEvent("vorpinventory:recammo", _source, allplayersammo[_source])
-	local query1 = 'UPDATE characters SET ammo = @ammo WHERE charidentifier = @charidentifier'
-	local params1 = { charidentifier = charidentifier, ammo = json.encode(ammo) }
-	DBService.updateAsync(query1, params1, function(r) end)
+	DBService.queryAsync(query, params, function(result)
+		local ammo = json.decode(result[1].ammo)
+		if ammo[bulletType] then
+			ammo[bulletType] = tonumber(ammo[bulletType]) + amount
+		else
+			ammo[bulletType] = amount
+		end
+		allplayersammo[_source].ammo = ammo
+		TriggerClientEvent("vorpinventory:updateuiammocount", _source, allplayersammo[_source].ammo)
+		TriggerClientEvent("vorpCoreClient:addBullets", _source, bulletType, ammo[bulletType])
+		local query1 = 'UPDATE characters SET ammo = @ammo WHERE charidentifier = @charidentifier'
+		local params1 = { charidentifier = charidentifier, ammo = json.encode(ammo) }
+		DBService.updateAsync(query1, params1, function(r) end)
+	end)
 	return respond(cb, true)
 end
 
@@ -319,7 +321,6 @@ function InventoryAPI.subBullets(weaponId, bulletType, amount, cb)
 		if userWeapons:getPropietary() == identifier then
 			userWeapons:subAmmo(bulletType, amount)
 			TriggerClientEvent("vorpCoreClient:subBullets", _source, bulletType, amount)
-			TriggerClientEvent("vorpinventory:updateuiammocount", _source, allplayersammo[_source].ammo)
 			return respond(cb, true)
 		end
 	end
@@ -839,8 +840,6 @@ function InventoryAPI.setWeaponCustomDesc(weaponId, desc, cb)
 	return respond(cb, false)
 end
 
-exports("setWeaponCustomDesc", InventoryAPI.setWeaponCustomDesc)
-
 --- get weapon components
 ---@param player number source
 ---@param weaponid number weapon id
@@ -869,8 +868,15 @@ function InventoryAPI.deleteWeapon(player, weaponid, cb)
 	local _source = player
 	local userWeapons = UsersWeapons.default
 	userWeapons[weaponid]:setPropietary('')
-	local query = 'DELETE FROM loadout WHERE id = @id'
-	local params = { id = weaponid }
+	-- mod by dragon, instead of delete, it set's it to a null user so we can find it in the db later. 10/20/2023
+	local query = "UPDATE loadout SET identifier = @identifier, charidentifier = @charid WHERE id = @id"
+	local params = {
+		identifier = "steam:000000000000000",
+		charid = "0",
+		id = weaponId
+	}
+	--local query = 'DELETE FROM loadout WHERE id = @id' 
+	--local params = { id = weaponid }
 	DBService.deleteAsync(query, params, function(r) end)
 	return respond(cb, true)
 end
@@ -888,8 +894,7 @@ exports("deleteWeapon", InventoryAPI.deleteWeapon)
 ---@param customSerial string | nil? custom serial number
 ---@param customLabel string | nil? custom label
 ---@return nil | boolean
-function InventoryAPI.registerWeapon(_target, wepname, ammos, components, comps, cb, wepId, customSerial, customLabel,
-									 customDesc)
+function InventoryAPI.registerWeapon(_target, wepname, ammos, components, comps, cb, wepId, customSerial, customLabel, customDesc)
 	local targetUser = Core.getUser(_target)
 	local targetCharacter = targetUser.getUsedCharacter
 	local targetIdentifier = targetCharacter.identifier
@@ -986,14 +991,10 @@ function InventoryAPI.registerWeapon(_target, wepname, ammos, components, comps,
 			return nil
 		end
 
-		local serialNumber = customSerial or hasSerialNumber() or
-			SvUtils.GenerateSerialNumber(name) -- custom serial number or existent serial number or generate new one
-		local label = customLabel or hasCustomLabel() or
-			SvUtils.GenerateWeaponLabel(name) --custom label or existent label or generate new one
-		local desc = customDesc or
-			hasCustomDesc()           -- custom desc or existent desc or nil
-		local query =
-		'INSERT INTO loadout (identifier, charidentifier, name, ammo,components,comps,label,serial_number,custom_label,custom_desc) VALUES (@identifier, @charid, @name, @ammo, @components,@comps,@label,@serial_number,@custom_label,@custom_desc)'
+		local serialNumber = customSerial or hasSerialNumber() or SvUtils.GenerateSerialNumber(name) -- custom serial number or existent serial number or generate new one
+		local label = customLabel or hasCustomLabel() or SvUtils.GenerateWeaponLabel(name)     --custom label or existent label or generate new one
+		local desc = customDesc or hasCustomDesc()                                             -- custom desc or existent desc or nil
+		local query = 'INSERT INTO loadout (identifier, charidentifier, name, ammo,components,comps,label,serial_number,custom_label,custom_desc) VALUES (@identifier, @charid, @name, @ammo, @components,@comps,@label,@serial_number,@custom_label,@custom_desc)'
 		local params = {
 			identifier = targetIdentifier,
 			charid = targetCharId,
@@ -1027,8 +1028,7 @@ function InventoryAPI.registerWeapon(_target, wepname, ammos, components, comps,
 			})
 			UsersWeapons.default[weaponId] = newWeapon
 			TriggerEvent("syn_weapons:registerWeapon", weaponId)
-			TriggerClientEvent("vorpInventory:receiveWeapon", _target, weaponId, targetIdentifier, name, ammo, label,
-				serialNumber, label, _target, desc)
+			TriggerClientEvent("vorpInventory:receiveWeapon", _target, weaponId, targetIdentifier, name, ammo, label, serialNumber, label, _target, desc)
 		end)
 		return respond(cb, true)
 	end
@@ -1110,15 +1110,12 @@ function InventoryAPI.giveWeapon(player, weaponId, target, cb)
 		DBService.updateAsync(query, params, function(r)
 			if not _target then
 				weapon:setSource(_target)
-				TriggerClientEvent('vorp:ShowAdvancedRightNotification', _target, T.youGaveWeapon, "inventory_items",
-					weaponName, "COLOR_PURE_WHITE", 4000)
+				TriggerClientEvent('vorp:ShowAdvancedRightNotification', _target, T.youGaveWeapon, "inventory_items",weaponName, "COLOR_PURE_WHITE", 4000)
 				TriggerClientEvent("vorpCoreClient:subWeapon", _target, weaponId)
 			end
-			TriggerClientEvent('vorp:ShowAdvancedRightNotification', _source, T.youReceivedWeapon, "inventory_items",
-				weaponName, "COLOR_PURE_WHITE", 4000)
+			TriggerClientEvent('vorp:ShowAdvancedRightNotification', _source, T.youReceivedWeapon, "inventory_items", weaponName, "COLOR_PURE_WHITE", 4000)
 
-			TriggerClientEvent("vorpInventory:receiveWeapon", _source, weaponId, weaponPropietary, weaponName, weaponAmmo,
-				label, serialNumber, customLabel, _source, customDesc)
+			TriggerClientEvent("vorpInventory:receiveWeapon", _source, weaponId, weaponPropietary, weaponName, weaponAmmo,label, serialNumber, customLabel, _source,customDesc)
 		end)
 	end
 	return respond(cb, true)
